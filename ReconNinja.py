@@ -9,12 +9,14 @@ import socket
 import base64
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+#from webdriver_manager.chrome import ChromeDriverManager
 import os
 from PIL import Image
 import shutil
 import subprocess
 from bs4 import BeautifulSoup
 
+#driver = webdriver.Chrome(ChromeDriverManager().install())
 # Code couleur ANSI pour la ligne grise
 GREY_BACKGROUND = '\033[48;5;240m'
 RESET_COLOR = '\033[0m'
@@ -137,7 +139,7 @@ def get_title(domain_name):
 
 def enum_domain(dom):
     print(f"✔️  Enumeration for domain: \033[1m{dom}\033[0m")
-    result = subprocess.run(f"subfinder -d {dom} -all -silent",
+    result = subprocess.run(f"subfinder -d {dom} -silent",
                             shell=True,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
@@ -153,8 +155,8 @@ def take_screenshot(program_id, domain_name):
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--log-level=3")
     # Créer l'instance de Chrome headless
+    #driver = webdriver.Chrome(executable_path='/usr/local/bin')
     driver = webdriver.Chrome(options=chrome_options)
-
     try:
         # Ouvrir la page du domaine
         driver.get(f"http://{domain_name}")
@@ -237,7 +239,7 @@ def scan_naabu_fingerprint(dom):
 
 def get_techno(dom):
 
-    result = subprocess.run(f"echo {dom} | httpx --tech-detect --silent | grep -oP '\[.*?\]'",
+    result = subprocess.run(f"echo {dom} | httpx --tech-detect --silent | grep -oP '\\[.*?\\]'",
                             shell=True,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
@@ -303,62 +305,6 @@ def add_dom(program_name, dom):
                 # Capture d'écran après l'insertion, si nécessaire
                 take_screenshot(domain_id, dom)
             print(f"✔️ Domain \033[1m{dom}\033[0m added to \033[1m{sys.argv[1]}\033[0m program")
-        except Exception as e:
-            conn.rollback()  # Annule les changements si une erreur survient
-            print(f"❌ Error to add domain '{dom}': {e}")
-    else:
-        print(f"❌ Program '{program_name}' not found.")
-
-
-def add_dommmmm(program_name, dom):
-    # Récupérer l'ID du programme auquel vous souhaitez ajouter un domaine
-    cursor.execute('SELECT id FROM domains WHERE domain_name = ?', (dom))
-    if cursor.fetchone() is not None:
-        print(f"❌ Domain \033[1m'{dom}'\033[0m already exists.")
-        return
-    program_id = cursor.fetchone()
-
-    if program_id:
-        program_id = program_id[0]
-
-        # Batch les requêtes avant de committer
-        try:
-            conn.execute('BEGIN')  # Démarre une transaction
-
-            # Récupérer l'adresse IP du domaine
-            ip_address = get_ip(dom)
-
-            # Si pas d'IP trouvée, utiliser une valeur par défaut (ex: None ou '')
-            if not ip_address:
-                print(f"⚠️ No IP found for {dom}, proceeding without IP.")
-                ip_address = None  # Ou '' si la colonne ne supporte pas NULL
-                http_status = None
-                title = None
-                techno = None
-                open_ports = None
-            else:
-                # Récupérer les autres informations si l'IP est présente ou non
-                http_status = get_http_status(dom)
-                title = get_title(dom)
-                techno = get_techno(dom)
-                open_ports = scan_naabu_fingerprint(dom)
-
-            # Insérer le domaine dans la base de données même sans IP
-            cursor.execute('INSERT INTO domains (domain_name, program_id) VALUES (?, ?)', (dom, program_id))
-            domain_id = cursor.lastrowid
-
-            # Insérer les détails du domaine
-            cursor.execute('''
-                INSERT INTO domain_details (http_status, ip, title, techno, open_port, domain_id)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (http_status, ip_address, title, techno, open_ports, domain_id))
-
-            # Commit tous les changements d'un coup
-            conn.commit()
-            if ip_address:
-                # Capture d'écran après l'insertion, si nécessaire
-                take_screenshot(domain_id, dom)
-
         except Exception as e:
             conn.rollback()  # Annule les changements si une erreur survient
             print(f"❌ Error to add domain '{dom}': {e}")
@@ -540,60 +486,6 @@ def list(entity_type, program_name=None):
                         print("\n")
             else:
                 print("❌ No domains found.")
-    else:
-        print("❌ Invalid entity type. Use 'program' or 'domain'.")
-
-
-
-def listtt(entity_type):
-    cursor = conn.cursor()
-
-    if entity_type == 'program':
-        cursor.execute('''
-            SELECT id, program_name, com FROM programs
-        ''')
-        programs = cursor.fetchall()
-
-        if programs:
-            print("📄 List of programs:")
-            for program in programs:
-                print(f"Program: \033[1m{program[1]}\033[0m - Comment: \033[1m{program[2]}\033[0m")
-        else:
-            print("❌ No programs found.")
-    elif entity_type == 'domain':
-        cursor.execute('''
-            SELECT domains.domain_name, domain_details.http_status, domain_details.ip, domain_details.title,
-                   domain_details.techno, domain_details.open_port, domain_details.screen, domain_details.com
-            FROM domains
-            INNER JOIN domain_details ON domains.id = domain_details.domain_id
-        ''')
-        domains = cursor.fetchall()
-
-        if domains:
-            print("📄 List of domains:")
-            for domain in domains:
-                domain_name, http_status, ip, title, techno, open_port, screen, comment = domain
-                print(f"\033[48;5;240m🌐 http://\033[1m{domain_name}\033[0m\n"
-                      f"\033[48;5;240mHttp status: \033[1m{http_status}\033[0m\n"
-                      f"\033[48;5;240mIP: \033[1m{ip}\033[0m\n"
-                      f"\033[48;5;240mTitle: \033[1m{title}\033[0m\n"
-                      f"\033[48;5;240mTech: \033[1m{techno}\033[0m\n"
-                      f"\033[48;5;240mOpen port: \033[1m{open_port}\033[0m\n")
-
-                # Afficher le commentaire s'il existe
-                if comment:
-                    print(f"\033[48;5;240mComment: \033[1m{comment}\033[0m\n")
-
-                # Afficher le screenshot s'il est disponible
-                if screen:
-                    display_screenshot_with_imgcat(screen)
-                    print("\n")
-                else:
-                    print("No screenshot available.")
-                    print("\n")
-        else:
-            print("❌ No domains found.")
-
     else:
         print("❌ Invalid entity type. Use 'program' or 'domain'.")
 
