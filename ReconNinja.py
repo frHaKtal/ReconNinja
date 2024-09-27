@@ -9,7 +9,7 @@ import socket
 import base64
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-#from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.chrome import ChromeDriverManager
 import os
 from PIL import Image
 import shutil
