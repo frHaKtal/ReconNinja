@@ -7,14 +7,19 @@ from tabulate import tabulate
 import requests
 import socket
 import base64
+
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+
+import imgkit
 import os
 from PIL import Image
 import shutil
 import subprocess
 from bs4 import BeautifulSoup
+
+
 
 #driver = webdriver.Chrome(ChromeDriverManager().install())
 # Code couleur ANSI pour la ligne grise
