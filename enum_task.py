@@ -9,8 +9,8 @@ from bs4 import BeautifulSoup
 import tldextract
 
 # Connexion à la base de données
-conn = sqlite3.connect('database.db')
-cursor = conn.cursor()
+#conn = sqlite3.connect('database.db')
+#cursor = conn.cursor()
 
 def get_db_connection():
     return sqlite3.connect('database.db')
@@ -132,8 +132,10 @@ def take_screenshot(domain_name):
 
 def add_dom(program_name, domain):
     # Ouvrir une nouvelle connexion et un curseur pour ce thread
-    conn = get_db_connection()
+    conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
+    #conn = get_db_connection()
+    #cursor = conn.cursor()
 
     try:
 
@@ -207,3 +209,5 @@ def add_dom(program_name, domain):
     finally:
         cursor.close()
         conn.close()
+    #cursor.close()
+    #conn.close()
