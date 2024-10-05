@@ -14,8 +14,8 @@ from tqdm import tqdm
 import multiprocessing
 
 # Connexion à la base de données
-conn = sqlite3.connect('database.db')
-cursor = conn.cursor()
+#conn = sqlite3.connect('database.db')
+#cursor = conn.cursor()
 
 # Dictionnaire contenant les commandes et leurs descriptions
 commands_with_descriptions = {
@@ -97,8 +97,9 @@ def display_screenshot_with_imgcat(screenshot_data):
 
 
 def rm(entity_name, entity_type):
+    #cursor = conn.cursor()
+    conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-
     if entity_type == 'program':
         # Vérifier si le programme existe
         cursor.execute('SELECT id FROM programs WHERE program_name = ?', (entity_name,))
@@ -127,6 +128,8 @@ def rm(entity_name, entity_type):
     else:
         print("❌ Invalid entity type. Use 'program' or 'domain'.")
 
+    conn.close()
+    cursor.close()
 
 def add_com(target_type, target_name, comment):
     """
@@ -135,7 +138,9 @@ def add_com(target_type, target_name, comment):
     :param target_name: Le nom du programme ou du domaine
     :param comment: Le commentaire à ajouter ou mettre à jour
     """
+    conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
+
     if target_type == 'program':
         # Vérifier si le programme existe
         cursor.execute('SELECT id FROM programs WHERE program_name = ?', (target_name,))
@@ -165,7 +170,11 @@ def add_com(target_type, target_name, comment):
     else:
         print(f"❌ Invalid target type. Use 'program' or 'domain'.")
 
+    conn.close()
+    cursor.close()
+
 def list(entity_type, program_name=None):
+    conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
 
     if entity_type == 'program':
@@ -298,12 +307,15 @@ def list(entity_type, program_name=None):
 
     else:
         print("❌ Invalid entity type. Use 'program', 'domain', or 'ip'.")
-
+    cursor.close()
+    conn.close()
 
 def add_program(program_name):
     # Ouvrir une connexion à la base de données
     #conn = get_db_connection()
     #cursor = conn.cursor()
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
 
     try:
         # Vérifier si le programme existe déjà
@@ -321,7 +333,7 @@ def add_program(program_name):
         print(f"❌ Failed to add program '{program_name}': {e}")
     finally:
         cursor.close()
-        #conn.close()
+        conn.close()
 
 def main():
     session = PromptSession()
@@ -384,7 +396,7 @@ def main():
             print("Exiting...")
             break
 
-    conn.close()
+    #conn.close()
 
 if __name__ == "__main__":
     main()
