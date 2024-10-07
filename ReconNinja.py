@@ -25,6 +25,7 @@ commands_with_descriptions = {
     'rm': 'Remove a domain (without http) or program (rm domain/program xx)',
     'list': 'Domain of program list (list domain/ip/program)',
     'show': 'Show domain list with screenshot',
+    'search': 'Search in domain list (search xx)',
     'clear': 'Clear screen',
     'scan': 'Perform a signature scan on all discovered servers',
 }
@@ -98,39 +99,42 @@ def display_screenshot_with_imgcat(screenshot_data):
 
 
 def rm(entity_name, entity_type):
-    #cursor = conn.cursor()
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
-    if entity_type == 'program':
-        # Vérifier si le programme existe
-        cursor.execute('SELECT id FROM programs WHERE program_name = ?', (entity_name,))
-        program = cursor.fetchone()
-        if program:
-            # Supprimer le programme
-            cursor.execute('DELETE FROM programs WHERE id = ?', (program[0],))
-            conn.commit()
-            print(f"✔️ Program \033[1m'{entity_name}'\033[0m has been deleted.")
+
+    try:
+        if entity_type == 'program':
+            # Vérifier si le programme existe
+            cursor.execute('SELECT id FROM programs WHERE program_name = ?', (entity_name,))
+            program = cursor.fetchone()
+            if program:
+                # Supprimer le programme
+                cursor.execute('DELETE FROM programs WHERE id = ?', (program[0],))
+                conn.commit()
+                print(f"✔️ Program \033[1m'{entity_name}'\033[0m has been deleted.")
+            else:
+                print(f"❌ Program \033[1m'{entity_name}'\033[0m not found.")
+
+        elif entity_type == 'domain':
+            # Vérifier si le domaine existe
+            cursor.execute('SELECT id FROM domains WHERE domain_name = ?', (entity_name,))
+            domain = cursor.fetchone()
+
+            if domain:
+                # Supprimer le domaine
+                cursor.execute('DELETE FROM domains WHERE id = ?', (domain[0],))
+                conn.commit()
+                print(f"✔️ Domain \033[1m'{entity_name}'\033[0m has been deleted.")
+            else:
+                print(f"❌ Domain \033[1m'{entity_name}'\033[0m not found.")
+
         else:
-            print(f"❌ Program \033[1m'{entity_name}'\033[0m not found.")
+            print("❌ Invalid entity type. Use 'program' or 'domain'.")
+    finally:
+        # Fermer le curseur avant de fermer la connexion
+        cursor.close()
+        conn.close()
 
-    elif entity_type == 'domain':
-        # Vérifier si le domaine existe
-        cursor.execute('SELECT id FROM domains WHERE domain_name = ?', (entity_name,))
-        domain = cursor.fetchone()
-
-        if domain:
-            # Supprimer le domaine
-            cursor.execute('DELETE FROM domains WHERE id = ?', (domain[0],))
-            conn.commit()
-            print(f"✔️ Domain \033[1m'{entity_name}'\033[0m has been deleted.")
-        else:
-            print(f"❌ Domain \033[1m'{entity_name}'\033[0m not found.")
-
-    else:
-        print("❌ Invalid entity type. Use 'program' or 'domain'.")
-
-    conn.close()
-    cursor.close()
 
 def add_com(target_type, target_name, comment):
     """
@@ -142,38 +146,40 @@ def add_com(target_type, target_name, comment):
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
 
-    if target_type == 'program':
-        # Vérifier si le programme existe
-        cursor.execute('SELECT id FROM programs WHERE program_name = ?', (target_name,))
-        program = cursor.fetchone()
+    try:
+        if target_type == 'program':
+            # Vérifier si le programme existe
+            cursor.execute('SELECT id FROM programs WHERE program_name = ?', (target_name,))
+            program = cursor.fetchone()
 
-        if program:
-            program_id = program[0]
-            # Ajouter ou mettre à jour le commentaire du programme
-            cursor.execute('UPDATE programs SET com = ? WHERE id = ?', (comment, program_id))
-            conn.commit()
-            print(f"✔️ Comment added to program '{target_name}'")
+            if program:
+                program_id = program[0]
+                # Ajouter ou mettre à jour le commentaire du programme
+                cursor.execute('UPDATE programs SET com = ? WHERE id = ?', (comment, program_id))
+                conn.commit()
+                print(f"✔️ Comment added to program '{target_name}'")
+            else:
+                print(f"❌ Program '{target_name}' not found.")
+        elif target_type == 'domain':
+            # Vérifier si le domaine existe
+            cursor.execute('SELECT id FROM domains WHERE domain_name = ?', (target_name,))
+            domain = cursor.fetchone()
+
+            if domain:
+                domain_id = domain[0]
+                # Ajouter ou mettre à jour le commentaire du domaine
+                cursor.execute('UPDATE domain_details SET com = ? WHERE domain_id = ?', (comment, domain_id))
+                conn.commit()
+                print(f"✔️ Comment added to domain '{target_name}'")
+            else:
+                print(f"❌ Domain '{target_name}' not found.")
         else:
-            print(f"❌ Program '{target_name}' not found.")
-    elif target_type == 'domain':
-        # Vérifier si le domaine existe
-        cursor.execute('SELECT id FROM domains WHERE domain_name = ?', (target_name,))
-        domain = cursor.fetchone()
+            print(f"❌ Invalid target type. Use 'program' or 'domain'.")
 
-        if domain:
-            domain_id = domain[0]
-            # Ajouter ou mettre à jour le commentaire du domaine
-            cursor.execute('UPDATE domain_details SET com = ? WHERE domain_id = ?', (comment, domain_id))
-            conn.commit()
-            print(f"✔️ Comment added to domain '{target_name}'")
-        else:
-            print(f"❌ Domain '{target_name}' not found.")
-    else:
-        print(f"❌ Invalid target type. Use 'program' or 'domain'.")
-
-    conn.close()
-    cursor.close()
-
+    finally:
+        # Fermer le curseur avant la connexion
+        cursor.close()
+        conn.close()
 
 def show(program_name=None):
     conn = sqlite3.connect('database.db')
@@ -243,6 +249,59 @@ def show(program_name=None):
     cursor.close()
     conn.close()
 
+
+def search(search_text):
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+
+    # Rechercher dans plusieurs colonnes
+    query = '''
+        SELECT domains.domain_name, domain_details.http_status, domain_details.ip, domain_details.title,
+               domain_details.techno, domain_details.open_port, domain_details.screen, domain_details.spfdmarc, domain_details.com
+        FROM domains
+        INNER JOIN domain_details ON domains.id = domain_details.domain_id
+        WHERE domains.domain_name LIKE ?
+        OR domain_details.http_status LIKE ?
+        OR domain_details.ip LIKE ?
+        OR domain_details.title LIKE ?
+        OR domain_details.techno LIKE ?
+        OR domain_details.open_port LIKE ?
+        OR domain_details.spfdmarc LIKE ?
+        ORDER BY domain_details.screen IS NOT NULL DESC,  -- D'abord ceux avec un screenshot
+                 domain_details.ip IS NOT NULL DESC      -- Puis ceux avec une IP
+    '''
+
+    search_wildcard = f'%{search_text}%'
+    cursor.execute(query, (search_wildcard, search_wildcard, search_wildcard, search_wildcard, search_wildcard, search_wildcard, search_wildcard))
+
+    domains = cursor.fetchall()
+
+    if domains:
+        print(f"📄 List of domains matching '{search_text}':")
+        for domain in domains:
+            domain_name, http_status, ip, title, techno, open_port, screen, spfdmarc, comment = domain
+            print(f"\033[48;5;240m🌐 http://\033[1m{domain_name}\033[0m\n"
+                  f"\033[48;5;240mHttp status: \033[1m{http_status}\033[0m\n"
+                  f"\033[48;5;240mIP: \033[1m{ip}\033[0m\n"
+                  f"\033[48;5;240mTitle: \033[1m{title}\033[0m\n"
+                  f"\033[48;5;240mTech: \033[1m{techno}\033[0m\n"
+                  f"\033[48;5;240mOpen port: \033[1m{open_port}\033[0m\n"
+                  f"\033[48;5;240mSpf/Dmarc: \033[0m{spfdmarc}\033[0m\n")
+
+            if comment:
+                print(f"\033[48;5;240mComment: \033[1m{comment}\033[0m\n")
+
+            if screen:
+                display_screenshot_with_imgcat(screen)
+                print("\n")
+            else:
+                print("No screenshot available.")
+                print("\n")
+    else:
+        print(f"❌ No domains found containing '{search_text}' in any field.")
+
+    cursor.close()
+    conn.close()
 
 def list(entity_type, program_name=None):
     conn = sqlite3.connect('database.db')
@@ -359,6 +418,8 @@ def main():
                     #add_domains_in_parallel_multiprocessing(program_name, domains)
                 elif command == 'show':
                     show(sys.argv[1])
+                elif command == 'search':
+                    search(args[0])
                 elif command == 'list':
                     if args:
                       list(args[0],sys.argv[1])
@@ -370,6 +431,7 @@ def main():
                         target_name = args[1]
                         comment = " ".join(args[2:])  # Prendre le reste des arguments comme commentaire
                         add_com(target_type, target_name, comment)
+                        #print(target_type, target_name, comment)
                     else:
                         print("❌ Usage: add_com [program|domain] [name] [comment]")
                 elif command == 'rm':
