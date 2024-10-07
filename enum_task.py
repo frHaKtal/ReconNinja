@@ -152,21 +152,20 @@ def add_dom(program_name, domain):
         # Récupérer les informations d'énumération
         ip = get_ip(domain)
         open_ports = scan_naabu_fingerprint(domain)
+        #spfdmarc = get_spfdmarc(domain)
         extracted = tldextract.extract(domain)
 
         # Récupérer uniquement le spfdmarc si le domaine principal n'est pas déjà présent
         domain_main = f"{extracted.domain}.{extracted.suffix}"
-        cursor.execute('SELECT spfdmarc FROM domain_details JOIN domains ON domains.id = domain_details.domain_id WHERE domain_name LIKE ?', (f"%.{domain_main}",))
-        existing_main_domain = cursor.fetchone()
-        #print(f"#{existing_main_domain[0]}#")
+        #cursor.execute('SELECT spfdmarc FROM domain_details JOIN domains ON domains.id = domain_details.domain_id WHERE domain_name LIKE ?', (f"%.{domain_main}",))
+        #existing_main_domain = cursor.fetchone()
 
-        if existing_main_domain:
-            spfdmarc = existing_main_domain[0]
-        else:
-            spfdmarc = get_spfdmarc(domain_main)  # Récupérer spfdmarc seulement si le domaine principal n'est pas présent
+        #if existing_main_domain:
+        #    spfdmarc = existing_main_domain[0]
+        #else:
+        #    spfdmarc = get_spfdmarc(domain_main)  # Récupérer spfdmarc seulement si le domaine principal n'est pas présent
 
-        #spfdmarc = get_spfdmarc(f"{extracted.domain}.{extracted.suffix}")
-        #spfdmarc = f"{extracted.domain}.{extracted.suffix}"
+        spfdmarc = get_spfdmarc(domain_main)
         if not ip or not open_ports:
             http_status = None
             techno = None
@@ -199,7 +198,6 @@ def add_dom(program_name, domain):
             ''', (domain_id, title, ip, http_status, techno, open_ports, screenshot, spfdmarc))
 
             conn.commit()
-
             #print(f"✔️ Domain {domain} added successfully.")
         else:
             print(f"❌ Program {program_name} not found.")
@@ -209,5 +207,3 @@ def add_dom(program_name, domain):
     finally:
         cursor.close()
         conn.close()
-    #cursor.close()
-    #conn.close()
