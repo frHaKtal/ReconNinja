@@ -23,7 +23,8 @@ commands_with_descriptions = {
     'add': 'Add domain1.com domain2.com or *.domain.com',
     'add_com': 'Add comment to domain or program (add_com domain/program domain.com "xx")',
     'rm': 'Remove a domain (without http) or program (rm domain/program xx)',
-    'list': 'Domain of program list (list domain/program/ip)',
+    'list': 'Domain of program list (list domain/ip/program)',
+    'show': 'Show domain list with screenshot',
     'clear': 'Clear screen',
     'scan': 'Perform a signature scan on all discovered servers',
 }
@@ -173,101 +174,46 @@ def add_com(target_type, target_name, comment):
     conn.close()
     cursor.close()
 
-def list(entity_type, program_name=None):
+
+def show(program_name=None):
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
 
-    if entity_type == 'program':
-        cursor.execute('''
-            SELECT id, program_name, com FROM programs
-        ''')
-        programs = cursor.fetchall()
+    if program_name:
+        # Récupérer l'ID du programme
+        cursor.execute('SELECT id FROM programs WHERE program_name = ?', (program_name,))
+        program = cursor.fetchone()
 
-        if programs:
-            print("📄 List of programs:")
-            for program in programs:
-                print(f"Program: \033[1m{program[1]}\033[0m - Comment: \033[1m{program[2]}\033[0m")
-        else:
-            print("❌ No programs found.")
+        if program:
+            program_id = program[0]
 
-    elif entity_type == 'domain':
-        if program_name:
-            # Récupérer l'ID du programme
-            cursor.execute('SELECT id FROM programs WHERE program_name = ?', (program_name,))
-            program = cursor.fetchone()
-
-            if program:
-                program_id = program[0]
-
-                # Récupérer le nombre de domaines pour ce programme
-                cursor.execute('''
-                    SELECT COUNT(*) FROM domains
-                    WHERE program_id = ?
-                ''', (program_id,))
-                domain_count = cursor.fetchone()[0]
-
-                print(f"📝 Number of domains for program \033[1m{program_name}\033[0m: \033[1m{domain_count}\033[0m")
-
-                # Afficher les domaines du programme
-                cursor.execute('''
-                    SELECT domains.domain_name, domain_details.http_status, domain_details.ip, domain_details.title,
-                           domain_details.techno, domain_details.open_port, domain_details.screen, domain_details.spfdmarc, domain_details.com
-                    FROM domains
-                    INNER JOIN domain_details ON domains.id = domain_details.domain_id
-                    WHERE domains.program_id = ?
-                    ORDER BY domain_details.screen IS NOT NULL DESC,
-                             CASE
-                                WHEN domain_details.http_status = 200 THEN 1
-                                WHEN domain_details.http_status IS NULL THEN 3
-                                ELSE 2
-                             END
-                ''', (program_id,))
-                domains = cursor.fetchall()
-
-                if domains:
-                    print(f"📄 List of domains for program \033[1m{program_name}\033[0m:")
-                    for domain in domains:
-                        domain_name, http_status, ip, title, techno, open_port, screen, spfdmarc, comment = domain
-                        print(f"\033[48;5;240m🌐 http://\033[1m{domain_name}\033[0m\n"
-                              f"\033[48;5;240mHttp status: \033[1m{http_status}\033[0m\n"
-                              f"\033[48;5;240mIP: \033[1m{ip}\033[0m\n"
-                              f"\033[48;5;240mTitle: \033[1m{title}\033[0m\n"
-                              f"\033[48;5;240mTech: \033[1m{techno}\033[0m\n"
-                              f"\033[48;5;240mOpen port: \033[1m{open_port}\033[0m\n"
-                              f"\033[48;5;240mSpf/Dmarc: \033[1m{spfdmarc}\033[0m\n")
-
-                        if comment:
-                            print(f"\033[48;5;240mComment: \033[1m{comment}\033[0m\n")
-
-                        if screen:
-                            display_screenshot_with_imgcat(screen)
-                            print("\n")
-                        else:
-                            print("No screenshot available.")
-                            print("\n")
-                else:
-                    print(f"❌ No domains found for program \033[1m{program_name}\033[0m.")
-            else:
-                print(f"❌ Program \033[1m{program_name}\033[0m not found.")
-
-        else:
-            # Récupérer le nombre total de domaines
-            cursor.execute('SELECT COUNT(*) FROM domains')
-            total_domains = cursor.fetchone()[0]
-            print(f"📝 Total number of domains: \033[1m{total_domains}\033[0m")
-
-            # Afficher tous les domaines
+            # Récupérer le nombre de domaines pour ce programme
             cursor.execute('''
-                SELECT domains.domain_name, domain_details.http_status, domain_details.spfdmarc, domain_details.ip, domain_details.title,
+                SELECT COUNT(*) FROM domains
+                WHERE program_id = ?
+            ''', (program_id,))
+            domain_count = cursor.fetchone()[0]
+
+            print(f"📝 Number of domains for program \033[1m{program_name}\033[0m: \033[1m{domain_count}\033[0m")
+
+            # Afficher les domaines du programme
+            cursor.execute('''
+                SELECT domains.domain_name, domain_details.http_status, domain_details.ip, domain_details.title,
                        domain_details.techno, domain_details.open_port, domain_details.screen, domain_details.spfdmarc, domain_details.com
                 FROM domains
                 INNER JOIN domain_details ON domains.id = domain_details.domain_id
-                ORDER BY domain_details.screen IS NOT NULL DESC, domain_details.http_status DESC
-            ''')
+                WHERE domains.program_id = ?
+                ORDER BY domain_details.screen IS NOT NULL DESC,
+                         CASE
+                            WHEN domain_details.http_status = 200 THEN 1
+                            WHEN domain_details.http_status IS NULL THEN 3
+                            ELSE 2
+                         END
+            ''', (program_id,))
             domains = cursor.fetchall()
 
             if domains:
-                print("📄 List of domains:")
+                print(f"\n📄 List of domains for program \033[1m{program_name}\033[0m:")
                 for domain in domains:
                     domain_name, http_status, ip, title, techno, open_port, screen, spfdmarc, comment = domain
                     print(f"\033[48;5;240m🌐 http://\033[1m{domain_name}\033[0m\n"
@@ -276,7 +222,7 @@ def list(entity_type, program_name=None):
                           f"\033[48;5;240mTitle: \033[1m{title}\033[0m\n"
                           f"\033[48;5;240mTech: \033[1m{techno}\033[0m\n"
                           f"\033[48;5;240mOpen port: \033[1m{open_port}\033[0m\n"
-                          f"\033[48;5;240mSpf/Dmarc: \033[1m{spfdmarc}\033[0m\n")
+                          f"\033[48;5;240mSpf/Dmarc: \033[0m{spfdmarc}\033[0m\n")
 
                     if comment:
                         print(f"\033[48;5;240mComment: \033[1m{comment}\033[0m\n")
@@ -288,7 +234,46 @@ def list(entity_type, program_name=None):
                         print("No screenshot available.")
                         print("\n")
             else:
-                print("❌ No domains found.")
+                print(f"❌ No domains found for program \033[1m{program_name}\033[0m.")
+        else:
+            print(f"❌ Program \033[1m{program_name}\033[0m not found.")
+    else:
+        print("❌ No program name provided.")
+
+    cursor.close()
+    conn.close()
+
+
+def list(entity_type, program_name=None):
+    conn = sqlite3.connect('database.db')
+    cursor = conn.cursor()
+
+    if entity_type == 'program':
+        cursor.execute('''
+            SELECT id, program_name, com FROM programs
+        ''')
+        programs = cursor.fetchall()
+
+        if programs:
+            print("\n📄 List of programs:")
+            for program in programs:
+                print(f"Program: \033[1m{program[1]}\033[0m - Comment: \033[1m{program[2]}\033[0m")
+        else:
+            print("❌ No programs found.")
+
+    elif entity_type == 'domain':
+        cursor.execute('''
+            SELECT domain_name FROM domains
+            ORDER BY domain_name
+        ''')
+        domains = cursor.fetchall()
+
+        if domains:
+            print("\n📄 List of domains:")
+            for domain in domains:
+                print(f"\033[1m{domain[0]}\033[0m")  # Afficher uniquement le nom du domaine
+        else:
+            print("❌ No domains found.")
 
     elif entity_type == 'ip':
         cursor.execute('''
@@ -299,7 +284,7 @@ def list(entity_type, program_name=None):
         ips = cursor.fetchall()
 
         if ips:
-            print("📄 List of IP addresses:")
+            print("\n📄 List of IP addresses:")
             for ip in ips:
                 print(f"\033[1m{ip[0]}\033[0m")
         else:
@@ -307,6 +292,7 @@ def list(entity_type, program_name=None):
 
     else:
         print("❌ Invalid entity type. Use 'program', 'domain', or 'ip'.")
+
     cursor.close()
     conn.close()
 
@@ -369,8 +355,10 @@ def main():
                             domains.append(domain)
 
                     # Lancer l'ajout des domaines en parallèle
-                    #add_domains_in_parallel(program_name, domains)
-                    add_domains_in_parallel_multiprocessing(program_name, domains)
+                    add_domains_in_parallel_multithread(program_name, domains)
+                    #add_domains_in_parallel_multiprocessing(program_name, domains)
+                elif command == 'show':
+                    show(sys.argv[1])
                 elif command == 'list':
                     if args:
                       list(args[0],sys.argv[1])
