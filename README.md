@@ -1,6 +1,6 @@
 # ReconNinja
 
-ReconNinja its a tool for mass recon domain with iterm2 and imgcat on macos
+ReconNinja its a tool for mass recon domain with iterm2 and imgcat
 
 next step: add nuclei, add fuzz recon
 
