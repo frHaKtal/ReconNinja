@@ -5,17 +5,16 @@ import sqlite3
 from prompt_toolkit import PromptSession, print_formatted_text
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.shortcuts import print_formatted_text
-#from enum_task import add_dom, setup_database
 from enum_task import add_dom
 from setup_database import setup_database
 import subprocess
 import base64
 from tqdm import tqdm
 import multiprocessing
-
-# Connexion à la base de données
-#conn = sqlite3.connect('database.db')
-#cursor = conn.cursor()
+import argparse
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
 
 # Dictionnaire contenant les commandes et leurs descriptions
 commands_with_descriptions = {
@@ -182,6 +181,8 @@ def add_com(target_type, target_name, comment):
         conn.close()
 
 def show(program_name=None):
+
+    console = Console()
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
 
@@ -202,10 +203,11 @@ def show(program_name=None):
 
             print(f"📝 Number of domains for program \033[1m{program_name}\033[0m: \033[1m{domain_count}\033[0m")
 
-            # Afficher les domaines du programme
+            # Récupérer les domaines du programme avec le phash
             cursor.execute('''
                 SELECT domains.domain_name, domain_details.http_status, domain_details.ip, domain_details.title,
-                       domain_details.techno, domain_details.open_port, domain_details.screen, domain_details.spfdmarc, domain_details.com
+                       domain_details.techno, domain_details.open_port, domain_details.screen, domain_details.phash, domain_details.spfdmarc,
+                       domain_details.com, domain_details.phash
                 FROM domains
                 INNER JOIN domain_details ON domains.id = domain_details.domain_id
                 WHERE domains.program_id = ?
@@ -220,25 +222,44 @@ def show(program_name=None):
 
             if domains:
                 print(f"\n📄 List of domains for program \033[1m{program_name}\033[0m:")
+
+                # Dictionnaire pour grouper les domaines par phash
+                grouped_domains = {}
+
                 for domain in domains:
-                    domain_name, http_status, ip, title, techno, open_port, screen, spfdmarc, comment = domain
-                    print(f"\033[48;5;240m🌐 http://\033[1m{domain_name}\033[0m\n"
-                          f"\033[48;5;240mHttp status: \033[1m{http_status}\033[0m\n"
-                          f"\033[48;5;240mIP: \033[1m{ip}\033[0m\n"
-                          f"\033[48;5;240mTitle: \033[1m{title}\033[0m\n"
-                          f"\033[48;5;240mTech: \033[1m{techno}\033[0m\n"
-                          f"\033[48;5;240mOpen port: \033[1m{open_port}\033[0m\n"
-                          f"\033[48;5;240mSpf/Dmarc: \033[0m{spfdmarc}\033[0m\n")
+                    domain_name, http_status, ip, title, techno, open_port, screen, phash, spfdmarc, comment, phash = domain
+                    if phash not in grouped_domains:
+                        grouped_domains[phash] = []
+                    grouped_domains[phash].append(domain)
 
-                    if comment:
-                        print(f"\033[48;5;240mComment: \033[1m{comment}\033[0m\n")
+                # Afficher les groupes de domaines par phash
+                for phash, group in grouped_domains.items():
+                    if len(group) > 1:
+                        print(f"⚠️  Domains with identical phash \033[1m{phash}\033[0m:")
 
-                    if screen:
-                        display_screenshot_with_imgcat(screen)
-                        print("\n")
-                    else:
-                        print("No screenshot available.")
-                        print("\n")
+                    for domain in group:
+                        domain_name, http_status, ip, title, techno, open_port, screen, phash, spfdmarc, comment, phash = domain
+                        console.rule("[bold blue]Domains Overview[/bold blue]")
+
+                        console.print(f"[dim]🌐 Domain:[/dim] [bold]{domain_name}[/bold]")
+                        console.print(f"[dim]Http status:[/dim] [bold]{http_status}[/bold]")
+                        console.print(f"[dim]IP:[/dim] [bold]{ip}[/bold]")
+                        console.print(f"[dim]Title:[/dim] [bold]{title}[/bold]")
+                        console.print(f"[dim]Tech:[/dim] [bold]{techno}[/bold]")
+                        console.print(f"[dim]Open port:[/dim] [bold]{open_port}[/bold]")
+                        console.print(f"[dim]Spf/Dmarc:[/dim] [bold]{spfdmarc}[/bold]")
+
+                        if comment:
+                            console.print(f"[dim]Comment:[/dim] [bold]{comment}[/bold]")
+                        if screen:
+                            #screenshot_panel = Panel("Screenshot available", title="Screenshot", border_style="green")
+                            #console.print(screenshot_panel)
+                            display_screenshot_with_imgcat(screen)
+                            print("\n")
+                        else:
+                            print("No screenshot available.")
+                            print("\n")
+
             else:
                 print(f"❌ No domains found for program \033[1m{program_name}\033[0m.")
         else:
@@ -251,6 +272,7 @@ def show(program_name=None):
 
 
 def search(search_text):
+    console = Console()
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
 
@@ -277,28 +299,32 @@ def search(search_text):
     domains = cursor.fetchall()
 
     if domains:
-        print(f"📄 List of domains matching '{search_text}':")
+        console.print(f"[bold green]📄 List of domains matching '{search_text}':[/bold green]")
         for domain in domains:
             domain_name, http_status, ip, title, techno, open_port, screen, spfdmarc, comment = domain
-            print(f"\033[48;5;240m🌐 http://\033[1m{domain_name}\033[0m\n"
-                  f"\033[48;5;240mHttp status: \033[1m{http_status}\033[0m\n"
-                  f"\033[48;5;240mIP: \033[1m{ip}\033[0m\n"
-                  f"\033[48;5;240mTitle: \033[1m{title}\033[0m\n"
-                  f"\033[48;5;240mTech: \033[1m{techno}\033[0m\n"
-                  f"\033[48;5;240mOpen port: \033[1m{open_port}\033[0m\n"
-                  f"\033[48;5;240mSpf/Dmarc: \033[0m{spfdmarc}\033[0m\n")
+            console.rule("[bold blue]Domains Overview[/bold blue]")
+
+            console.print(f"[dim]🌐 Domain:[/dim] [bold]{domain_name}[/bold]")
+            console.print(f"[dim]Http status:[/dim] [bold]{http_status}[/bold]")
+            console.print(f"[dim]IP:[/dim] [bold]{ip}[/bold]")
+            console.print(f"[dim]Title:[/dim] [bold]{title}[/bold]")
+            console.print(f"[dim]Tech:[/dim] [bold]{techno}[/bold]")
+            console.print(f"[dim]Open port:[/dim] [bold]{open_port}[/bold]")
+            console.print(f"[dim]Spf/Dmarc:[/dim] [bold]{spfdmarc}[/bold]")
 
             if comment:
-                print(f"\033[48;5;240mComment: \033[1m{comment}\033[0m\n")
+                console.print(f"[dim]Comment:[/dim] [bold]{comment}[/bold]")
 
             if screen:
+                #screenshot_panel = Panel("[bold yellow]Screenshot available[/bold yellow]", title="Screenshot", border_style="green")
+                #console.print(screenshot_panel)
                 display_screenshot_with_imgcat(screen)
-                print("\n")
+                console.print("\n")
             else:
-                print("No screenshot available.")
-                print("\n")
+                console.print("[bold red]No screenshot available.[/bold red]")
+                console.print("\n")
     else:
-        print(f"❌ No domains found containing '{search_text}' in any field.")
+        console.print(f"[bold red]❌ No domains found containing '{search_text}' in any field.[/bold red]")
 
     cursor.close()
     conn.close()
@@ -381,72 +407,66 @@ def add_program(program_name):
         conn.close()
 
 def main():
-    session = PromptSession()
 
-    # Message d'instruction
-    print_formatted_text("\n【Welcome to ReconNinja v1.0 by _frHaKtal_】")
-    print_formatted_text("‼️ Press tab for autocompletion and available commands\n")
+    # Vérifier si des arguments sont passés dans la ligne de commande
+    if len(sys.argv) > 1:
+        session = PromptSession()
+        print_formatted_text("\n【Welcome to ReconNinja v1.0 by _frHaKtal_】")
+        print_formatted_text("‼️ Press tab for autocompletion and available commands\n")
+        setup_database()
 
-    # Créer la base de données et les tables si elles n'existent pas déjà
-    setup_database()
+        program_name = sys.argv[1]
+        command_completer = CommandCompleter()
 
-    # Ajouter le programme depuis l'argument de ligne de commande
-    program_name = sys.argv[1]
-    command_completer = CommandCompleter()
+        add_program(program_name)
+        while True:
+            try:
+                user_input = session.prompt(f'{program_name} ▶︎ ', completer=command_completer)
+                parts = user_input.split()
+                if parts:
+                    command = parts[0]
+                    args = parts[1:]
 
-    add_program(sys.argv[1])
-    while True:
-        try:
-            user_input = session.prompt(f'{program_name} ▶︎ ', completer=command_completer)
-            parts = user_input.split()
-            if parts:
-                command = parts[0]
-                args = parts[1:]
+                    if command == 'add':
+                        domains = []
+                        for domain in args:
+                            if '*.' in domain:
+                                domain_enum = enum_domain(domain.lstrip('*.'))
+                                domains.extend(domain_enum.splitlines())
+                                print(f"✔️  \033[1m{len(domains)}\033[0m domain find")
+                            else:
+                                domains.append(domain)
 
-                if command == 'add':
-                    domains = []
-                    for domain in args:
-                        if '*.' in domain:
-                            domain_enum = enum_domain(domain.lstrip('*.'))
-                            domains.extend(domain_enum.splitlines())
-                            print(f"✔️  \033[1m{len(domains)}\033[0m domain find")
+                        # Lancer l'ajout des domaines en parallèle
+                        add_domains_in_parallel_multithread(program_name, domains)
+                    elif command == 'show':
+                        show(sys.argv[1])
+                    elif command == 'search':
+                        search(args[0])
+                    elif command == 'list':
+                        if args:
+                            list(args[0], sys.argv[1])
+                    elif command == 'clear':
+                        os.system('clear')
+                    elif command == 'add_com':
+                        if len(args) >= 3:
+                            target_type = args[0]
+                            target_name = args[1]
+                            comment = " ".join(args[2:])  # Prendre le reste des arguments comme commentaire
+                            add_com(target_type, target_name, comment)
                         else:
-                            domains.append(domain)
-
-                    # Lancer l'ajout des domaines en parallèle
-                    add_domains_in_parallel_multithread(program_name, domains)
-                    #add_domains_in_parallel_multiprocessing(program_name, domains)
-                elif command == 'show':
-                    show(sys.argv[1])
-                elif command == 'search':
-                    search(args[0])
-                elif command == 'list':
-                    if args:
-                      list(args[0],sys.argv[1])
-                elif command == 'clear':
-                    os.system('clear')
-                elif command == 'add_com':
-                    if len(args) >= 3:
-                        target_type = args[0]
-                        target_name = args[1]
-                        comment = " ".join(args[2:])  # Prendre le reste des arguments comme commentaire
-                        add_com(target_type, target_name, comment)
-                        #print(target_type, target_name, comment)
-                    else:
-                        print("❌ Usage: add_com [program|domain] [name] [comment]")
-                elif command == 'rm':
-                    rm(args[1],args[0])
-                elif command == 'exit':
-                    print("Exiting...")
-                    break
-
-                # Autres commandes...
-
-        except (KeyboardInterrupt, EOFError):
-            print("Exiting...")
-            break
-
-    #conn.close()
+                            print("❌ Usage: add_com [program|domain] [name] [comment]")
+                    elif command == 'rm':
+                        rm(args[1], args[0])
+                    elif command == 'exit':
+                        print("Exiting...")
+                        break
+            except (KeyboardInterrupt, EOFError):
+                print("Exiting...")
+                break
+    else:
+        # Si aucun argument n'est passé, afficher la liste des programmes
+        list('program')
 
 if __name__ == "__main__":
     main()
