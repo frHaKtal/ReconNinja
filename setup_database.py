@@ -35,6 +35,7 @@ def setup_database():
             techno TEXT,
             open_port TEXT,
             screen BLOB,
+            phash TEXT,
             fuzz TEXT,
             nuclei TEXT,
             spfdmarc TEXT,
