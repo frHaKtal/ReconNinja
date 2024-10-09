@@ -6,6 +6,9 @@ import subprocess
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
+from PIL import Image
+import io
+import imagehash
 import tldextract
 
 # Connexion à la base de données
@@ -14,6 +17,23 @@ import tldextract
 
 def get_db_connection():
     return sqlite3.connect('database.db')
+
+
+def get_phash(screenshot_base64):
+    try:
+        # Décoder l'image en base64 pour obtenir les bytes
+        image_data = base64.b64decode(screenshot_base64)
+
+        # Créer une image PIL à partir des bytes
+        image = Image.open(io.BytesIO(image_data))
+
+        # Calculer le perceptual hash
+        phash_value = str(imagehash.phash(image))
+        return phash_value
+
+    except Exception as e:
+        #print(f"Failed to calculate phash: {e}")
+        return None
 
 
 def get_spfdmarc(domain):
@@ -62,12 +82,16 @@ def get_http_status(domain):
         return None
 
 def get_techno(domain):
-    result = subprocess.run(f"echo {domain} | httpx --tech-detect --silent | grep -oP '\\[.*?\\]'",
+    result = subprocess.run(f"echo {domain} | httpx --tech-detect --silent -nc | grep -oP '\\[.*?\\]'",
                             shell=True,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
                             text=True)
-    return result.stdout
+
+    if not result.stdout.strip():  # Vérifie si stdout est vide ou seulement des espaces
+        return None
+
+    return result.stdout.strip()  # Retire les espaces en trop si nécessaire
 
 
 def get_title(domain):
@@ -172,13 +196,14 @@ def add_dom(program_name, domain):
             open_ports = None
             screenshot = None
             title = None
+            phash = None
         else:
             http_status = get_http_status(domain)
             techno = get_techno(domain)
             open_ports = scan_naabu_fingerprint(domain)
             screenshot = take_screenshot(domain)
             title = get_title(domain)
-
+            phash = get_phash(screenshot)
 
         # Récupérer l'ID du programme
         cursor.execute('SELECT id FROM programs WHERE program_name = ?', (program_name,))
@@ -193,9 +218,9 @@ def add_dom(program_name, domain):
 
             # Ajouter les détails du domaine dans la table domain_details
             cursor.execute('''
-                INSERT INTO domain_details (domain_id, title, ip, http_status, techno, open_port, screen, spfdmarc)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (domain_id, title, ip, http_status, techno, open_ports, screenshot, spfdmarc))
+                INSERT INTO domain_details (domain_id, title, ip, http_status, techno, open_port, screen, phash, spfdmarc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (domain_id, title, ip, http_status, techno, open_ports, screenshot, phash, spfdmarc))
 
             conn.commit()
             #print(f"✔️ Domain {domain} added successfully.")
