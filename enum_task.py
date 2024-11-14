@@ -5,6 +5,9 @@ import socket
 import subprocess
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 from PIL import Image
 import io
@@ -17,7 +20,6 @@ import tldextract
 
 def get_db_connection():
     return sqlite3.connect('database.db')
-
 
 def get_phash(screenshot_base64):
     try:
@@ -34,6 +36,27 @@ def get_phash(screenshot_base64):
     except Exception as e:
         #print(f"Failed to calculate phash: {e}")
         return None
+
+def get_method(domain):
+    # Tester HTTPS
+    https_command = f"curl -s -X OPTIONS -I https://{domain} | grep -i 'allow:' | grep -oPi '(?<=allow: ).*'"
+    https_result = subprocess.run(https_command, shell=True, capture_output=True, text=True)
+    method_https = https_result.stdout.strip()
+
+    # Tester HTTP
+    http_command = f"curl -s -X OPTIONS -I http://{domain} | grep -i 'allow:' | grep -oPi '(?<=allow: ).*'"
+    http_result = subprocess.run(http_command, shell=True, capture_output=True, text=True)
+    method_http = http_result.stdout.strip()
+
+    result = []
+
+    if method_https:  # Si method_https n'est pas vide
+        result.append(f"https: {method_https}")
+
+    if method_http:  # Si method_http n'est pas vide
+        result.append(f"http: {method_http}")
+
+    return " | ".join(result) if result else "No methods found"
 
 
 def get_spfdmarc(domain):
@@ -75,7 +98,7 @@ def get_http_status(domain):
 
     url = f"http://{domain}"
     try:
-        response = requests.get(url, timeout=5)  # Ajoute un timeout pour éviter de bloquer
+        response = requests.get(url, timeout=10)  # Ajoute un timeout pour éviter de bloquer
         return response.status_code
     except requests.RequestException as e:
         #print(f"❌ Error fetching {url}: {e}")
@@ -93,7 +116,6 @@ def get_techno(domain):
 
     return result.stdout.strip()  # Retire les espaces en trop si nécessaire
 
-
 def get_title(domain):
     url = f"http://{domain}"
     try:
@@ -108,12 +130,12 @@ def get_title(domain):
         #print(f"❌ Error fetching {url}: {e}")
         return 'No title found'
 
-
 def scan_naabu_fingerprint(domain):
     try:
         # Exécuter la commande avec un timeout de 10 secondes
         result = subprocess.run(
-            f"naabu -host {domain} -ec -cdn -silent 2>/dev/null | fingerprintx",
+            f"naabu -host {domain} -ec -cdn -silent 2>/dev/null",
+#f"naabu -host {domain} -ec -cdn -silent 2>/dev/null | fingerprintx",
             shell=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -131,6 +153,29 @@ def scan_naabu_fingerprint(domain):
         #print(f"❌ Error run {dom}: {e}")
         return None
 
+
+
+def check_protocol(domain_name):
+    """
+    Vérifie si le domaine est accessible via HTTPS ou HTTP.
+    Renvoie le protocole disponible.
+    """
+    try:
+        response = requests.get(f"https://{domain_name}", timeout=5)
+        if response.status_code == 200:
+            return "https"
+    except requests.RequestException:
+        pass  # Ignore l'erreur et essaie HTTP ensuite
+
+    try:
+        response = requests.get(f"http://{domain_name}", timeout=5)
+        if response.status_code == 200:
+            return "http"
+    except requests.RequestException:
+        pass  # Si les deux échouent, retourne None
+
+    return None
+
 def take_screenshot(domain_name):
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -141,7 +186,9 @@ def take_screenshot(domain_name):
 
     try:
         # Ouvrir la page du domaine
-        driver.get(f"http://{domain_name}")
+        protocol = check_protocol(domain_name)
+        #driver.get(f"http://{domain_name}")
+        driver.get(f"{protocol}://{domain_name}")
         screenshot = driver.get_screenshot_as_png()
 
         # Encoder en base64
@@ -190,20 +237,23 @@ def add_dom(program_name, domain):
         #    spfdmarc = get_spfdmarc(domain_main)  # Récupérer spfdmarc seulement si le domaine principal n'est pas présent
 
         spfdmarc = get_spfdmarc(domain_main)
-        if not ip or not open_ports:
-            http_status = None
-            techno = None
-            open_ports = None
-            screenshot = None
-            title = None
-            phash = None
-        else:
-            http_status = get_http_status(domain)
-            techno = get_techno(domain)
-            open_ports = scan_naabu_fingerprint(domain)
-            screenshot = take_screenshot(domain)
-            title = get_title(domain)
-            phash = get_phash(screenshot)
+ #       if not ip:
+ #           http_status = None
+ #           techno = None
+ #           open_ports = None
+ #           screenshot = None
+ #           title = None
+ #           phash = None
+ #           method = None
+#        else:
+        http_status = get_http_status(domain)
+        techno = get_techno(domain)
+        open_ports = scan_naabu_fingerprint(domain)
+        screenshot = take_screenshot(domain)
+        title = get_title(domain)
+        phash = get_phash(screenshot)
+        method = get_method(domain)
+        #print(get_method(domain))
 
         # Récupérer l'ID du programme
         cursor.execute('SELECT id FROM programs WHERE program_name = ?', (program_name,))
@@ -218,9 +268,9 @@ def add_dom(program_name, domain):
 
             # Ajouter les détails du domaine dans la table domain_details
             cursor.execute('''
-                INSERT INTO domain_details (domain_id, title, ip, http_status, techno, open_port, screen, phash, spfdmarc)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (domain_id, title, ip, http_status, techno, open_ports, screenshot, phash, spfdmarc))
+                INSERT INTO domain_details (domain_id, title, ip, http_status, techno, open_port, screen, phash, spfdmarc, method)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (domain_id, title, ip, http_status, techno, open_ports, screenshot, phash, spfdmarc, method))
 
             conn.commit()
             #print(f"✔️ Domain {domain} added successfully.")
