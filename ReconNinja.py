@@ -16,6 +16,9 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
+def lolcat(text):
+    os.system(f"echo '{text}' | lolcat")
+
 # Dictionnaire contenant les commandes et leurs descriptions
 commands_with_descriptions = {
     'exit': 'Exit the program',
@@ -36,7 +39,6 @@ class CommandCompleter(Completer):
         for command, description in commands_with_descriptions.items():
             if command.startswith(word_before_cursor):
                 yield Completion(command, start_position=-len(word_before_cursor), display_meta=description)
-
 
 def add_domains_in_parallel_multiprocessing(program_name, domains):
     # Créer une barre de progression avec le nombre total de domaines
@@ -107,10 +109,13 @@ def rm(entity_name, entity_type):
             cursor.execute('SELECT id FROM programs WHERE program_name = ?', (entity_name,))
             program = cursor.fetchone()
             if program:
+                program_id = program[0]
+                # Supprimer les domaines associés au programme
+                cursor.execute('DELETE FROM domains WHERE program_id = ?', (program_id,))
                 # Supprimer le programme
-                cursor.execute('DELETE FROM programs WHERE id = ?', (program[0],))
+                cursor.execute('DELETE FROM programs WHERE id = ?', (program_id,))
                 conn.commit()
-                print(f"✔️ Program \033[1m'{entity_name}'\033[0m has been deleted.")
+                print(f"✔️ Program \033[1m'{entity_name}'\033[0m and its associated domains have been deleted.")
             else:
                 print(f"❌ Program \033[1m'{entity_name}'\033[0m not found.")
 
@@ -133,6 +138,8 @@ def rm(entity_name, entity_type):
         # Fermer le curseur avant de fermer la connexion
         cursor.close()
         conn.close()
+
+
 
 
 def add_com(target_type, target_name, comment):
@@ -207,7 +214,7 @@ def show(program_name=None):
             cursor.execute('''
                 SELECT domains.domain_name, domain_details.http_status, domain_details.ip, domain_details.title,
                        domain_details.techno, domain_details.open_port, domain_details.screen, domain_details.phash, domain_details.spfdmarc,
-                       domain_details.com, domain_details.phash
+                       domain_details.method, domain_details.com, domain_details.phash
                 FROM domains
                 INNER JOIN domain_details ON domains.id = domain_details.domain_id
                 WHERE domains.program_id = ?
@@ -227,7 +234,7 @@ def show(program_name=None):
                 grouped_domains = {}
 
                 for domain in domains:
-                    domain_name, http_status, ip, title, techno, open_port, screen, phash, spfdmarc, comment, phash = domain
+                    domain_name, http_status, ip, title, techno, open_port, screen, phash, spfdmarc, method, comment, phash = domain
                     if phash not in grouped_domains:
                         grouped_domains[phash] = []
                     grouped_domains[phash].append(domain)
@@ -238,11 +245,11 @@ def show(program_name=None):
                         print(f"⚠️  Domains with identical phash \033[1m{phash}\033[0m:")
 
                     for domain in group:
-                        domain_name, http_status, ip, title, techno, open_port, screen, phash, spfdmarc, comment, phash = domain
+                        domain_name, http_status, ip, title, techno, open_port, screen, phash, spfdmarc, method, comment, phash = domain
                         console.rule("[bold blue]Domains Overview[/bold blue]")
-
-                        console.print(f"[dim]🌐 Domain:[/dim] [bold]{domain_name}[/bold]")
+                        console.print(f"[dim]🌐 Domain:[/dim] [bold][link=https://{domain_name}]{domain_name}[/link][/bold]")
                         console.print(f"[dim]Http status:[/dim] [bold]{http_status}[/bold]")
+                        console.print(f"[dim]Http method:[/dim] [bold]{method}[/bold]")
                         console.print(f"[dim]IP:[/dim] [bold]{ip}[/bold]")
                         console.print(f"[dim]Title:[/dim] [bold]{title}[/bold]")
                         console.print(f"[dim]Tech:[/dim] [bold]{techno}[/bold]")
@@ -271,63 +278,82 @@ def show(program_name=None):
     conn.close()
 
 
-def search(search_text):
+def search(search_text, program_name):
     console = Console()
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
 
-    # Rechercher dans plusieurs colonnes
+    # Récupérer l'ID du programme en fonction de son nom
+    cursor.execute('SELECT id FROM programs WHERE program_name = ?', (program_name,))
+    program = cursor.fetchone()
+
+    if not program:
+        console.print(f"[bold red]❌ Program '{program_name}' not found.[/bold red]")
+        cursor.close()
+        conn.close()
+        return
+
+    program_id = program[0]
+
+    # Rechercher dans plusieurs colonnes pour le programme en cours
     query = '''
         SELECT domains.domain_name, domain_details.http_status, domain_details.ip, domain_details.title,
-               domain_details.techno, domain_details.open_port, domain_details.screen, domain_details.spfdmarc, domain_details.com
+               domain_details.techno, domain_details.open_port, domain_details.screen, domain_details.spfdmarc,
+               domain_details.method, domain_details.com
         FROM domains
         INNER JOIN domain_details ON domains.id = domain_details.domain_id
-        WHERE domains.domain_name LIKE ?
-        OR domain_details.http_status LIKE ?
-        OR domain_details.ip LIKE ?
-        OR domain_details.title LIKE ?
-        OR domain_details.techno LIKE ?
-        OR domain_details.open_port LIKE ?
-        OR domain_details.spfdmarc LIKE ?
+        WHERE domains.program_id = ?
+        AND (
+            domains.domain_name LIKE ?
+            OR domain_details.http_status LIKE ?
+            OR domain_details.ip LIKE ?
+            OR domain_details.title LIKE ?
+            OR domain_details.techno LIKE ?
+            OR domain_details.open_port LIKE ?
+            OR domain_details.spfdmarc LIKE ?
+            OR domain_details.method LIKE ?
+        )
         ORDER BY domain_details.screen IS NOT NULL DESC,  -- D'abord ceux avec un screenshot
                  domain_details.ip IS NOT NULL DESC      -- Puis ceux avec une IP
     '''
 
     search_wildcard = f'%{search_text}%'
-    cursor.execute(query, (search_wildcard, search_wildcard, search_wildcard, search_wildcard, search_wildcard, search_wildcard, search_wildcard))
+    cursor.execute(query, (
+        program_id, search_wildcard, search_wildcard, search_wildcard, search_wildcard,
+        search_wildcard, search_wildcard, search_wildcard, search_wildcard
+    ))
 
     domains = cursor.fetchall()
 
     if domains:
-        console.print(f"[bold green]📄 List of domains matching '{search_text}':[/bold green]")
+        console.print(f"[bold green]📄 List of domains matching '{search_text}' in program '{program_name}':[/bold green]")
         for domain in domains:
-            domain_name, http_status, ip, title, techno, open_port, screen, spfdmarc, comment = domain
+            domain_name, http_status, ip, title, techno, open_port, screen, spfdmarc, method, com = domain
             console.rule("[bold blue]Domains Overview[/bold blue]")
-
-            console.print(f"[dim]🌐 Domain:[/dim] [bold]{domain_name}[/bold]")
+            console.print(f"[dim]🌐 Domain:[/dim] [bold][link=https://{domain_name}]{domain_name}[/link][/bold]")
             console.print(f"[dim]Http status:[/dim] [bold]{http_status}[/bold]")
+            console.print(f"[dim]Http method:[/dim] [bold]{method}[/bold]")
             console.print(f"[dim]IP:[/dim] [bold]{ip}[/bold]")
             console.print(f"[dim]Title:[/dim] [bold]{title}[/bold]")
             console.print(f"[dim]Tech:[/dim] [bold]{techno}[/bold]")
             console.print(f"[dim]Open port:[/dim] [bold]{open_port}[/bold]")
             console.print(f"[dim]Spf/Dmarc:[/dim] [bold]{spfdmarc}[/bold]")
 
-            if comment:
-                console.print(f"[dim]Comment:[/dim] [bold]{comment}[/bold]")
+            if com:
+                console.print(f"[dim]Comment:[/dim] [bold]{com}[/bold]")
 
             if screen:
-                #screenshot_panel = Panel("[bold yellow]Screenshot available[/bold yellow]", title="Screenshot", border_style="green")
-                #console.print(screenshot_panel)
                 display_screenshot_with_imgcat(screen)
                 console.print("\n")
             else:
                 console.print("[bold red]No screenshot available.[/bold red]")
                 console.print("\n")
     else:
-        console.print(f"[bold red]❌ No domains found containing '{search_text}' in any field.[/bold red]")
+        console.print(f"[bold red]❌ No domains found containing '{search_text}' in any field in program '{program_name}'.[/bold red]")
 
     cursor.close()
     conn.close()
+
 
 def list(entity_type, program_name=None):
     conn = sqlite3.connect('database.db')
@@ -347,33 +373,63 @@ def list(entity_type, program_name=None):
             print("❌ No programs found.")
 
     elif entity_type == 'domain':
-        cursor.execute('''
-            SELECT domain_name FROM domains
-            ORDER BY domain_name
-        ''')
-        domains = cursor.fetchall()
+        if program_name:
+            # Récupérer l'ID du programme en fonction de son nom
+            cursor.execute('''
+                SELECT id FROM programs WHERE program_name = ?
+            ''', (program_name,))
+            program = cursor.fetchone()
 
-        if domains:
-            print("\n📄 List of domains:")
-            for domain in domains:
-                print(f"\033[1m{domain[0]}\033[0m")  # Afficher uniquement le nom du domaine
+            if program:
+                program_id = program[0]
+                # Récupérer les domaines associés au programme
+                cursor.execute('''
+                    SELECT domain_name FROM domains
+                    WHERE program_id = ?
+                    ORDER BY domain_name
+                ''', (program_id,))
+                domains = cursor.fetchall()
+
+                if domains:
+                    print(f"\n📄 List of domains for program '{program_name}':")
+                    for domain in domains:
+                        print(f"\033[1m{domain[0]}\033[0m")
+                else:
+                    print(f"❌ No domains found for program '{program_name}'.")
+            else:
+                print(f"❌ Program '{program_name}' not found.")
         else:
-            print("❌ No domains found.")
+            print("❌ Please specify a program name to list domains.")
 
     elif entity_type == 'ip':
-        cursor.execute('''
-            SELECT DISTINCT domain_details.ip FROM domain_details
-            WHERE domain_details.ip IS NOT NULL
-            ORDER BY domain_details.ip
-        ''')
-        ips = cursor.fetchall()
+        if program_name:
+            # Récupérer l'ID du programme en fonction de son nom
+            cursor.execute('''
+                SELECT id FROM programs WHERE program_name = ?
+            ''', (program_name,))
+            program = cursor.fetchone()
 
-        if ips:
-            print("\n📄 List of IP addresses:")
-            for ip in ips:
-                print(f"\033[1m{ip[0]}\033[0m")
+            if program:
+                program_id = program[0]
+                # Récupérer les IP associées aux domaines du programme
+                cursor.execute('''
+                    SELECT DISTINCT domain_details.ip FROM domain_details
+                    JOIN domains ON domains.id = domain_details.domain_id
+                    WHERE domains.program_id = ? AND domain_details.ip IS NOT NULL
+                    ORDER BY domain_details.ip
+                ''', (program_id,))
+                ips = cursor.fetchall()
+
+                if ips:
+                    print(f"\n📄 List of IP addresses for program '{program_name}':")
+                    for ip in ips:
+                        print(f"\033[1m{ip[0]}\033[0m")
+                else:
+                    print(f"❌ No IP addresses found for program '{program_name}'.")
+            else:
+                print(f"❌ Program '{program_name}' not found.")
         else:
-            print("❌ No IPs found.")
+            print("❌ Please specify a program name to list IP addresses.")
 
     else:
         print("❌ Invalid entity type. Use 'program', 'domain', or 'ip'.")
@@ -411,8 +467,11 @@ def main():
     # Vérifier si des arguments sont passés dans la ligne de commande
     if len(sys.argv) > 1:
         session = PromptSession()
-        print_formatted_text("\n【Welcome to ReconNinja v1.0 by _frHaKtal_】")
-        print_formatted_text("‼️ Press tab for autocompletion and available commands\n")
+        #print_formatted_text("\n【Welcome to ReconNinja v1.0 by _frHaKtal_】")
+        #print_formatted_text("‼️ Press tab for autocompletion and available commands\n")
+        lolcat("\n【Welcome to ReconNinja v1.0 by _frHaKtal_】")
+        lolcat("‼️ Press tab for autocompletion and available commands\n")
+
         setup_database()
 
         program_name = sys.argv[1]
@@ -433,16 +492,18 @@ def main():
                             if '*.' in domain:
                                 domain_enum = enum_domain(domain.lstrip('*.'))
                                 domains.extend(domain_enum.splitlines())
-                                print(f"✔️  \033[1m{len(domains)}\033[0m domain find")
+                                print(f"✔️  \033[1m{len(domain_enum.splitlines())}\033[0m domain find")
                             else:
                                 domains.append(domain)
 
                         # Lancer l'ajout des domaines en parallèle
+                        #print(len(domains))
+                        #print(domains)
                         add_domains_in_parallel_multithread(program_name, domains)
                     elif command == 'show':
                         show(sys.argv[1])
                     elif command == 'search':
-                        search(args[0])
+                        search(args[0],sys.argv[1])
                     elif command == 'list':
                         if args:
                             list(args[0], sys.argv[1])
