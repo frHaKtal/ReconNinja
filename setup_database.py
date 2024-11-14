@@ -39,6 +39,7 @@ def setup_database():
             fuzz TEXT,
             nuclei TEXT,
             spfdmarc TEXT,
+            method TEXT,
             domain_id INTEGER,
             com TEXT,
             FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE
